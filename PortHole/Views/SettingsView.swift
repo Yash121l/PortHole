@@ -23,6 +23,10 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Port Labels", systemImage: "tag")
                 }
+            NotificationSettingsTab(settings: settings)
+                .tabItem {
+                    Label("Notifications", systemImage: "bell.badge")
+                }
         }
         .frame(width: 520)
         // The menu-bar badge and exposed warning need scans even while the
@@ -168,6 +172,32 @@ struct MenuBarSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Notifications
+
+struct NotificationSettingsTab: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("When a new port starts listening", isOn: $settings.notifyOnNewPort)
+                Toggle("When a port is exposed to the network", isOn: $settings.notifyOnExposedPort)
+            } footer: {
+                Text("Bursts of new ports are collapsed into a single summary notification. Notification permission is requested the first time you enable one of these.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onChange(of: settings.notifyOnNewPort) { _, enabled in
+            if enabled { NotificationManager.shared.requestAuthorization() }
+        }
+        .onChange(of: settings.notifyOnExposedPort) { _, enabled in
+            if enabled { NotificationManager.shared.requestAuthorization() }
+        }
     }
 }
 

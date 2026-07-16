@@ -59,6 +59,7 @@ final class PortListViewModel {
     private var firstSeen: [ListeningPort.ID: Date] = [:]
     private var refreshTask: Task<Void, Never>?
     private var panelIsOpen = false
+    private var hasCompletedInitialScan = false
 
     private let scanner: any PortScanning
     private let terminator: any ProcessTerminating
@@ -166,6 +167,12 @@ final class PortListViewModel {
                 survivedSigterm = survivedSigterm.intersection(scannedIDs)
                 ports = scanned
             }
+            // The first scan after launch "adds" everything — never notify
+            // about it. Only genuine arrivals afterwards are interesting.
+            if hasCompletedInitialScan {
+                NotificationManager.shared.scanDidChange(diff: diff, settings: settings)
+            }
+            hasCompletedInitialScan = true
             scanError = nil
             lastRefresh = now
         } catch {
