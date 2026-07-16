@@ -242,8 +242,12 @@ final class PortListViewModel {
             )
             if outcome == .stillRunning {
                 survivedSigterm.insert(port.id)
-                killMessage = "\(port.processName) is still running after SIGTERM. Use Force Kill to stop it immediately."
+                killMessage = settings.autoEscalateToSigkill
+                    ? "\(port.processName) survived SIGTERM and SIGKILL — it may be stuck in the kernel."
+                    : "\(port.processName) is still running after SIGTERM. Use Force Kill to stop it immediately."
             }
+        } catch TerminationError.processNotFound {
+            // Already gone; the refresh below drops the row.
         } catch {
             killMessage = error.localizedDescription
         }
@@ -253,6 +257,8 @@ final class PortListViewModel {
     func forceKill(_ port: ListeningPort) async {
         do {
             _ = try await terminator.forceKill(pid: port.pid, processName: port.processName)
+            survivedSigterm.remove(port.id)
+        } catch TerminationError.processNotFound {
             survivedSigterm.remove(port.id)
         } catch {
             killMessage = error.localizedDescription

@@ -9,11 +9,9 @@ struct PortHoleApp: App {
     private var settings: SettingsStore { SettingsStore.shared }
 
     init() {
-        // Real lsof-backed scanning as of milestone 2; the signal-based
-        // process controller replaces the placeholder in milestone 4.
         _viewModel = State(initialValue: PortListViewModel(
             scanner: LsofPortScanner(),
-            terminator: PlaceholderProcessTerminator(),
+            terminator: ProcessController(),
             settings: SettingsStore.shared
         ))
     }
