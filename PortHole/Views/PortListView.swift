@@ -208,7 +208,12 @@ struct PortListView: View {
                                 .tag(port.id)
                         }
                     } header: {
-                        Text("\(group.processName) — PID \(String(group.pid))")
+                        HStack(spacing: 5) {
+                            if let first = group.ports.first {
+                                AppIconView(port: first, size: 14)
+                            }
+                            Text("\(group.processName) — PID \(String(group.pid))")
+                        }
                     }
                 }
             } else {

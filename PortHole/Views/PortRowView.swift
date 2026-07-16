@@ -226,16 +226,18 @@ struct PortRowView: View {
     }
 }
 
-/// Placeholder icon for milestone 1; milestone 3 swaps in real app icons
-/// resolved via NSWorkspace.
+/// The owning app's real icon where the executable maps to a bundle or a
+/// running GUI app; a generic executable icon otherwise.
 struct AppIconView: View {
     let port: ListeningPort
+    var size: CGFloat = 22
 
     var body: some View {
-        Image(systemName: "app.dashed")
-            .font(.title3)
-            .foregroundStyle(.secondary)
-            .frame(width: 22, height: 22)
+        Image(nsImage: AppIconResolver.shared.icon(pid: port.pid,
+                                                   executablePath: port.executablePath))
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 }

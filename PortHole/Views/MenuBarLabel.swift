@@ -19,6 +19,9 @@ struct MenuBarLabel: View {
                     .monospacedDigit()
             }
         }
+        // Best-effort tint (see note above — the system may render this as a
+        // template regardless; the symbol swap carries the state either way).
+        .foregroundStyle(warnExposed ? AnyShapeStyle(.orange) : AnyShapeStyle(.primary))
         .accessibilityLabel(warnExposed
             ? "PortHole, \(viewModel.portCount) listening ports, some exposed to the network"
             : "PortHole, \(viewModel.portCount) listening ports")
