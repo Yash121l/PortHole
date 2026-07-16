@@ -44,13 +44,21 @@ struct PortRowView: View {
 
             Spacer(minLength: 4)
 
-            if isHovering {
+            // Fixed-size trailing slot: the action buttons are always laid
+            // out and only fade in on hover. Inserting/removing them (the
+            // previous approach) reflowed the whole row every time the cursor
+            // crossed it — the main source of jank while scrolling.
+            ZStack(alignment: .trailing) {
                 inlineActions
-            } else if isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Pinned")
+                    .opacity(isHovering ? 1 : 0)
+                    .allowsHitTesting(isHovering)
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .opacity(isHovering ? 0 : 1)
+                        .accessibilityLabel("Pinned")
+                }
             }
         }
         .padding(.vertical, settings.rowDensity == .compact ? 1 : 4)

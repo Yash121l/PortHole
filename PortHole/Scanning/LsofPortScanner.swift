@@ -36,6 +36,7 @@ actor LsofPortScanner: PortScanning {
         var startByPid: [Int32: Date?] = [:]
         var argsByPid: [Int32: [String]?] = [:]
         var cwdByPid: [Int32: String?] = [:]
+        var toolByPid: [Int32: InferredTool?] = [:]
         for index in ports.indices {
             let pid = ports[index].pid
             if pathByPid[pid] == nil {
@@ -43,11 +44,17 @@ actor LsofPortScanner: PortScanning {
                 startByPid[pid] = ProcessInfoProvider.startDate(pid: pid)
                 argsByPid[pid] = ProcessInfoProvider.arguments(pid: pid)
                 cwdByPid[pid] = ProcessInfoProvider.workingDirectory(pid: pid)
+                // Inference runs here — once per process per scan — rather
+                // than in row renders, which must stay allocation-free for
+                // smooth scrolling.
+                toolByPid[pid] = DevToolInference.infer(processName: ports[index].processName,
+                                                        arguments: argsByPid[pid] ?? nil)
             }
             ports[index].executablePath = pathByPid[pid] ?? nil
             ports[index].processStartDate = startByPid[pid] ?? nil
             ports[index].arguments = argsByPid[pid] ?? nil
             ports[index].workingDirectory = cwdByPid[pid] ?? nil
+            ports[index].inferredTool = toolByPid[pid] ?? nil
         }
         return ports
     }

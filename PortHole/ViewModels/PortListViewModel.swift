@@ -31,9 +31,16 @@ final class PortListViewModel {
     // MARK: Scan state
 
     private(set) var ports: [ListeningPort] = []
+    /// True only during *user-initiated* scans — background auto-refreshes
+    /// stay silent so the panel doesn't re-render (and the spinner doesn't
+    /// flicker) every polling tick.
     private(set) var isScanning = false
     private(set) var scanError: String?
     private(set) var lastRefresh: Date?
+    /// Bumped only when rows appear or disappear. Views key their insert/
+    /// remove animations to this instead of the whole array, so metadata
+    /// updates never trigger a list-wide animation pass.
+    private(set) var structuralChanges = 0
 
     // MARK: Filter / sort state
 
@@ -60,6 +67,9 @@ final class PortListViewModel {
     private var refreshTask: Task<Void, Never>?
     private var panelIsOpen = false
     private var hasCompletedInitialScan = false
+    /// Reentrancy guard, deliberately separate from the UI-facing
+    /// `isScanning` so silent scans don't touch observed state.
+    private var scanInFlight = false
 
     private let scanner: any PortScanning
     private let terminator: any ProcessTerminating
@@ -147,10 +157,14 @@ final class PortListViewModel {
 
     // MARK: - Scanning
 
-    func refresh() async {
-        guard !isScanning else { return }
-        isScanning = true
-        defer { isScanning = false }
+    func refresh(userInitiated: Bool = false) async {
+        guard !scanInFlight else { return }
+        scanInFlight = true
+        if userInitiated { isScanning = true }
+        defer {
+            scanInFlight = false
+            if userInitiated { isScanning = false }
+        }
         do {
             let scanned = try await scanner.scan()
             let now = Date()
@@ -165,6 +179,11 @@ final class PortListViewModel {
                 let scannedIDs = Set(scanned.map(\.id))
                 firstSeen = firstSeen.filter { scannedIDs.contains($0.key) }
                 survivedSigterm = survivedSigterm.intersection(scannedIDs)
+                if !diff.added.isEmpty || !diff.removed.isEmpty {
+                    // Same transaction as the ports write → the list animates
+                    // exactly this change and nothing else.
+                    structuralChanges += 1
+                }
                 ports = scanned
             }
             // The first scan after launch "adds" everything — never notify
@@ -173,7 +192,9 @@ final class PortListViewModel {
                 NotificationManager.shared.scanDidChange(diff: diff, settings: settings)
             }
             hasCompletedInitialScan = true
-            scanError = nil
+            // Observable writes are guarded — an unconditional `scanError =
+            // nil` every 2s would re-render the whole content area for nothing.
+            if scanError != nil { scanError = nil }
             lastRefresh = now
         } catch {
             scanError = error.localizedDescription
@@ -184,7 +205,7 @@ final class PortListViewModel {
     /// the auto-refresh loop.
     func panelAppeared() {
         panelIsOpen = true
-        Task { await refresh() }
+        Task { await refresh(userInitiated: true) }
         rescheduleRefreshLoop()
     }
 

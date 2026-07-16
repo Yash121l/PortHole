@@ -203,53 +203,35 @@ struct NotificationSettingsTab: View {
 
 // MARK: - Port Labels
 
+/// Master-detail: the list shows lightweight read-only rows and the editor
+/// below binds to the selected rule. The previous design embedded two text
+/// fields and an AppKit popup in *every* row, which made the list scroll
+/// jankily and re-encoded the whole rule set on each keystroke's re-layout.
 struct PortLabelsSettingsTab: View {
     @Bindable var settings: SettingsStore
-    @State private var selection: Set<UUID> = []
+    @State private var selection: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Rules attach a label and color to a port. A rule matches on the port number; add a process fragment to narrow it (e.g. 5000 + “python” → Flask, so AirPlay doesn’t match).")
+            Text("Rules attach a label and color to a port. A rule matches on the port number; add a process fragment to narrow it (e.g. 5000 + “python” → Flask, so AirPlay doesn’t match). Live inference from the running command may override port-only rules.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             List(selection: $selection) {
-                ForEach($settings.labelRules) { $rule in
-                    HStack(spacing: 8) {
-                        TextField("Port", value: $rule.port, format: .number.grouping(.never))
-                            .frame(width: 64)
-                            .accessibilityLabel("Port number")
-                        TextField("Label", text: $rule.label)
-                            .frame(minWidth: 130)
-                            .accessibilityLabel("Label")
-                        Picker("Color", selection: $rule.colorName) {
-                            ForEach(RuleColor.allNames, id: \.self) { name in
-                                Text(name.capitalized).tag(name)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 92)
-                        .accessibilityLabel("Label color")
-                        TextField("Process contains…", text: $rule.processHint)
-                            .frame(minWidth: 110)
-                            .accessibilityLabel("Process name filter")
-                        Circle()
-                            .fill(RuleColor.color(named: rule.colorName))
-                            .frame(width: 10, height: 10)
-                            .accessibilityHidden(true)
-                    }
-                    .textFieldStyle(.roundedBorder)
-                    .tag(rule.id)
+                ForEach(settings.labelRules) { rule in
+                    RuleRowView(rule: rule)
+                        .tag(rule.id)
                 }
             }
-            .frame(minHeight: 280)
+            .frame(minHeight: 240)
+            .onDeleteCommand { removeSelectedRule() }
 
             HStack(spacing: 8) {
                 Button {
                     let rule = PortLabelRule(port: 0, label: "New rule")
                     settings.labelRules.insert(rule, at: 0)
-                    selection = [rule.id]
+                    selection = rule.id
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -257,23 +239,117 @@ struct PortLabelsSettingsTab: View {
                 .accessibilityLabel("Add rule")
 
                 Button {
-                    settings.labelRules.removeAll { selection.contains($0.id) }
-                    selection = []
+                    removeSelectedRule()
                 } label: {
                     Image(systemName: "minus")
                 }
-                .disabled(selection.isEmpty)
-                .help("Remove the selected rules")
-                .accessibilityLabel("Remove selected rules")
+                .disabled(selection == nil)
+                .help("Remove the selected rule (⌫)")
+                .accessibilityLabel("Remove selected rule")
 
                 Spacer()
 
                 Button("Restore Defaults") {
                     settings.labelRules = PortLabelRule.defaultRules
-                    selection = []
+                    selection = nil
                 }
+            }
+
+            Divider()
+
+            if let ruleBinding = selectedRuleBinding {
+                RuleEditorView(rule: ruleBinding)
+            } else {
+                Text("Select a rule to edit it.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, minHeight: 52)
             }
         }
         .padding(20)
+    }
+
+    private func removeSelectedRule() {
+        guard let selection else { return }
+        settings.labelRules.removeAll { $0.id == selection }
+        self.selection = nil
+    }
+
+    /// Looks the rule up by id on every access so the binding can never hold
+    /// a stale index into a mutated array.
+    private var selectedRuleBinding: Binding<PortLabelRule>? {
+        guard let selection,
+              settings.labelRules.contains(where: { $0.id == selection }) else { return nil }
+        return Binding(
+            get: {
+                settings.labelRules.first { $0.id == selection }
+                    ?? PortLabelRule(port: 0, label: "")
+            },
+            set: { newValue in
+                if let index = settings.labelRules.firstIndex(where: { $0.id == selection }) {
+                    settings.labelRules[index] = newValue
+                }
+            }
+        )
+    }
+}
+
+/// Read-only, layout-cheap row: plain text and a capsule — nothing that
+/// bridges to AppKit controls.
+private struct RuleRowView: View {
+    let rule: PortLabelRule
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(rule.port == 0 ? "—" : String(rule.port))
+                .font(.system(.body, design: .monospaced).weight(.semibold))
+                .frame(width: 56, alignment: .leading)
+
+            Text(rule.label)
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(RuleColor.color(named: rule.colorName).opacity(0.18), in: Capsule())
+                .foregroundStyle(RuleColor.color(named: rule.colorName))
+
+            if !rule.processHint.isEmpty {
+                Text("process contains “\(rule.processHint)”")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Port \(rule.port), \(rule.label)\(rule.processHint.isEmpty ? "" : ", process contains \(rule.processHint)")")
+    }
+}
+
+private struct RuleEditorView: View {
+    @Binding var rule: PortLabelRule
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("Port", value: $rule.port, format: .number.grouping(.never))
+                .frame(width: 70)
+                .accessibilityLabel("Port number")
+            TextField("Label", text: $rule.label)
+                .frame(minWidth: 140)
+                .accessibilityLabel("Label")
+            Picker("Color", selection: $rule.colorName) {
+                ForEach(RuleColor.allNames, id: \.self) { name in
+                    Text(name.capitalized).tag(name)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 96)
+            .accessibilityLabel("Label color")
+            TextField("Process contains…", text: $rule.processHint)
+                .frame(minWidth: 120)
+                .accessibilityLabel("Process name filter")
+        }
+        .textFieldStyle(.roundedBorder)
+        .frame(minHeight: 52)
     }
 }

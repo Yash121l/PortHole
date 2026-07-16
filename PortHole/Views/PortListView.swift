@@ -1,21 +1,26 @@
 import SwiftUI
 
 /// The panel that drops down from the menu-bar icon.
+///
+/// Deliberately split into small subviews: with @Observable, each subview's
+/// body only re-runs when a property *it reads* changes. Keeping the header
+/// (spinner), footer (timestamp), and list in separate views means a
+/// background scan tick re-renders a line of text — not every row — which is
+/// what keeps scrolling smooth.
 struct PortListView: View {
     @Bindable var viewModel: PortListViewModel
     @Bindable var settings: SettingsStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            searchField
+            PanelHeaderView(viewModel: viewModel)
+            PanelSearchField(viewModel: viewModel)
             Divider()
-            filterBar
+            PanelFilterBar(viewModel: viewModel)
             Divider()
-            content
+            PanelContentView(viewModel: viewModel, settings: settings)
             Divider()
-            footer
+            PanelFooterView(viewModel: viewModel)
         }
         .frame(width: 400, height: 500)
         .onAppear { viewModel.panelAppeared() }
@@ -54,21 +59,27 @@ struct PortListView: View {
             Text(viewModel.killMessage ?? "")
         }
     }
+}
 
-    // MARK: Header
+// MARK: - Header
 
-    private var header: some View {
+private struct PanelHeaderView: View {
+    @Bindable var viewModel: PortListViewModel
+
+    var body: some View {
         HStack(spacing: 8) {
             Text("\(viewModel.filteredPorts.count) \(viewModel.filteredPorts.count == 1 ? "port" : "ports")")
                 .font(.headline)
                 .contentTransition(.numericText())
                 .accessibilityLabel("\(viewModel.filteredPorts.count) listening ports")
 
-            if viewModel.isScanning {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Scanning")
-            }
+            // Always present (opacity-toggled) so the header never reflows
+            // when a user-initiated scan starts.
+            ProgressView()
+                .controlSize(.small)
+                .opacity(viewModel.isScanning ? 1 : 0)
+                .accessibilityLabel("Scanning")
+                .accessibilityHidden(!viewModel.isScanning)
 
             Spacer()
 
@@ -90,7 +101,7 @@ struct PortListView: View {
             .accessibilityLabel("Sort and grouping options")
 
             Button {
-                Task { await viewModel.refresh() }
+                Task { await viewModel.refresh(userInitiated: true) }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
@@ -125,10 +136,14 @@ struct PortListView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
+}
 
-    // MARK: Search
+// MARK: - Search
 
-    private var searchField: some View {
+private struct PanelSearchField: View {
+    @Bindable var viewModel: PortListViewModel
+
+    var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
@@ -152,10 +167,14 @@ struct PortListView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
     }
+}
 
-    // MARK: Filter chips
+// MARK: - Filter chips
 
-    private var filterBar: some View {
+private struct PanelFilterBar: View {
+    @Bindable var viewModel: PortListViewModel
+
+    var body: some View {
         HStack(spacing: 6) {
             FilterChip(title: "TCP", isOn: $viewModel.showTCP)
             FilterChip(title: "UDP", isOn: $viewModel.showUDP)
@@ -165,11 +184,16 @@ struct PortListView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
+}
 
-    // MARK: Content
+// MARK: - Content
 
-    @ViewBuilder
-    private var content: some View {
+private struct PanelContentView: View {
+    @Bindable var viewModel: PortListViewModel
+    @Bindable var settings: SettingsStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
         if let error = viewModel.scanError {
             ContentUnavailableView {
                 Label("Scan Failed", systemImage: "exclamationmark.triangle")
@@ -177,7 +201,7 @@ struct PortListView: View {
                 Text(error)
             } actions: {
                 Button("Try Again") {
-                    Task { await viewModel.refresh() }
+                    Task { await viewModel.refresh(userInitiated: true) }
                 }
             }
         } else if viewModel.filteredPorts.isEmpty {
@@ -225,7 +249,9 @@ struct PortListView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
-        .animation(reduceMotion ? nil : .default, value: viewModel.ports)
+        // Keyed to the structural-change counter, not the array: rows animate
+        // in/out, but metadata refreshes never start a list-wide animation.
+        .animation(reduceMotion ? nil : .default, value: viewModel.structuralChanges)
         // Keyboard: arrows move the List selection natively; ⌫ kills the
         // selected row; ⏎ opens likely-HTTP ports in the browser.
         .onDeleteCommand {
@@ -241,10 +267,14 @@ struct PortListView: View {
             return .handled
         }
     }
+}
 
-    // MARK: Footer
+// MARK: - Footer
 
-    private var footer: some View {
+private struct PanelFooterView: View {
+    var viewModel: PortListViewModel
+
+    var body: some View {
         HStack {
             if let last = viewModel.lastRefresh {
                 Text("Updated \(Formatting.timeOnly.string(from: last))")

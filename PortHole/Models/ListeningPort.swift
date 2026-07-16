@@ -58,15 +58,15 @@ struct ListeningPort: Identifiable, Hashable, Sendable {
     var bindScope: BindScope { BindScope.classify(address: bindAddress) }
     var isExposed: Bool { bindScope.isExposed }
 
+    /// What this process is actually running (Vite, Next.js dev, Django …),
+    /// inferred from its name and argv — independent of the port number.
+    /// Stored, not computed: the scanner infers it once per process per scan
+    /// so scrolling never pays for string matching in row renders.
+    var inferredTool: InferredTool? = nil
+
     /// The full command line as launched, for the Copy Command action.
     var commandLine: String? {
         arguments?.joined(separator: " ")
-    }
-
-    /// What this process is actually running (Vite, Next.js dev, Django …),
-    /// inferred from its name and argv — independent of the port number.
-    var inferredTool: InferredTool? {
-        DevToolInference.infer(processName: processName, arguments: arguments)
     }
 
     /// Project-folder name derived from the working directory. Suppressed
