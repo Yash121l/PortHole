@@ -9,13 +9,11 @@ struct PortHoleApp: App {
     private var settings: SettingsStore { SettingsStore.shared }
 
     init() {
-        // Milestone 1 runs against mock data; milestone 2 swaps in the real
-        // lsof-backed scanner and signal-based process controller.
-        let scanner = MockPortScanner()
-        let terminator = MockProcessTerminator(scanner: scanner)
+        // Real lsof-backed scanning as of milestone 2; the signal-based
+        // process controller replaces the placeholder in milestone 4.
         _viewModel = State(initialValue: PortListViewModel(
-            scanner: scanner,
-            terminator: terminator,
+            scanner: LsofPortScanner(),
+            terminator: PlaceholderProcessTerminator(),
             settings: SettingsStore.shared
         ))
     }

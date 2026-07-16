@@ -153,13 +153,19 @@ final class PortListViewModel {
         do {
             let scanned = try await scanner.scan()
             let now = Date()
-            let scannedIDs = Set(scanned.map(\.id))
-            for port in scanned where firstSeen[port.id] == nil {
+            // Diff against the previous scan and skip the UI write entirely
+            // when nothing changed — no invalidation, no flicker. Inserts and
+            // removals animate because rows are keyed by stable ids.
+            let diff = PortDiff.between(previous: ports, current: scanned)
+            for port in diff.added {
                 firstSeen[port.id] = now
             }
-            firstSeen = firstSeen.filter { scannedIDs.contains($0.key) }
-            survivedSigterm = survivedSigterm.intersection(scannedIDs)
-            ports = scanned
+            if !diff.isEmpty {
+                let scannedIDs = Set(scanned.map(\.id))
+                firstSeen = firstSeen.filter { scannedIDs.contains($0.key) }
+                survivedSigterm = survivedSigterm.intersection(scannedIDs)
+                ports = scanned
+            }
             scanError = nil
             lastRefresh = now
         } catch {
