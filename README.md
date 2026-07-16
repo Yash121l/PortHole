@@ -8,7 +8,8 @@ A native macOS menu bar utility that shows every port currently **listening** on
 - **Process mapping** — each port shows its owning process with the real app icon, PID, owning user, uptime, bind address, and executable path (each field toggleable).
 - **One-click kill** — SIGTERM first, then a configurable grace period, then optional SIGKILL escalation (or an explicit Force Kill button). Confirmation is on by default and can be turned off.
 - **Exposure at a glance** — sockets bound beyond localhost (`0.0.0.0`, `*`, or a LAN IP) are flagged **Exposed** in orange; the menu bar icon can warn too, and a filter chip shows exposed ports only.
-- **Port labels** — well-known dev ports get human labels ("Vite", "Postgres", "Ollama"…); the rule set (port + optional process hint → label + color) is fully editable in Settings.
+- **Smart labels** — PortHole reads each process's real command line (`KERN_PROCARGS2`) and infers what it's actually running, so a bare `node` on any port is labeled "Vite", "Next.js dev", "Wrangler dev", etc. — no configuration needed. The working directory (`PROC_PIDVNODEPATHINFO`) supplies the project-folder name shown next to the process, so five `node`s are five different projects at a glance. Precedence: your process-hinted rules → live inference → port-number rules.
+- **Port labels** — the static rule set (port + optional process hint → label + color) remains fully editable in Settings and covers non-inferable ports ("Postgres", "Ollama"…).
 - **Row actions** — kill, copy port/PID/command, open `http://localhost:<port>` for likely-HTTP ports, reveal executable in Finder, pin ports to the top. All available inline on hover and via right-click.
 - **Search, filter, sort, group** — filter by port/process/PID, TCP/UDP chips, sort by port/process/PID/recently-appeared, optional group-by-app view.
 - **Notifications (optional)** — when a new port starts listening, or when a port shows up exposed to the network. Bursts collapse into a single summary.
@@ -73,7 +74,7 @@ If App Store distribution is ever required, that's a separate track: port enumer
 ## Known limitations
 
 - **Processes owned by other users / root:** `kill(2)` returns `EPERM`, and PortHole surfaces "*owned by another user and requires elevated privileges*" rather than failing silently. Actually killing those would need a privileged helper (SMAppService daemon + Authorization Services) — deliberately not built in v1. The same applies to some SIP-protected system processes.
-- **"Copy Command" copies the executable path** (or process name when the path can't be resolved), not the full argv command line.
+- **"Copy Command" copies the full argv command line** for your own processes; for other users' processes (where `KERN_PROCARGS2` is not readable) it falls back to the executable path or process name, and smart labels/project names are unavailable.
 - **Menu bar tinting:** macOS renders status-item content as template images in most configurations, so the orange exposed-port tint is best-effort — the icon *shape* also changes so the state is always visible.
 - **UDP semantics:** UDP has no LISTEN state; PortHole shows UDP sockets bound to a fixed local port and skips connected (`->`) and wildcard-port (`*:*`) sockets.
 - Uptime/start-time and executable path come from `libproc` and may be unavailable for other users' processes; those fields show as absent.

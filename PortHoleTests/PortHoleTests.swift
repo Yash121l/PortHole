@@ -112,5 +112,19 @@ final class ProcessInfoProviderTests: XCTestCase {
     func testUnknownPidReturnsNil() {
         XCTAssertNil(ProcessInfoProvider.executablePath(pid: 99_999_999))
         XCTAssertNil(ProcessInfoProvider.startDate(pid: 99_999_999))
+        XCTAssertNil(ProcessInfoProvider.arguments(pid: 99_999_999))
+        XCTAssertNil(ProcessInfoProvider.workingDirectory(pid: 99_999_999))
+    }
+
+    func testArgumentsAndCwdForOwnProcess() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+
+        let arguments = ProcessInfoProvider.arguments(pid: pid)
+        XCTAssertNotNil(arguments)
+        XCTAssertFalse(arguments?.first?.isEmpty ?? true)
+
+        let cwd = ProcessInfoProvider.workingDirectory(pid: pid)
+        XCTAssertNotNil(cwd)
+        XCTAssertTrue(cwd?.hasPrefix("/") == true)
     }
 }

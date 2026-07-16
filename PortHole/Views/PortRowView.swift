@@ -11,9 +11,27 @@ struct PortRowView: View {
 
     @State private var isHovering = false
 
-    private var rule: PortLabelRule? { settings.rule(for: port) }
     private var isPinned: Bool { settings.isPinned(port.port) }
     private var survivedSigterm: Bool { viewModel.survivedSigterm.contains(port.id) }
+
+    /// The label chip, by decreasing trust in the source:
+    /// 1. A user rule narrowed with a process hint — explicit intent.
+    /// 2. Live inference from what the process is actually running (argv) —
+    ///    beats a port-number guess: a Vite server on 8787 is still Vite.
+    /// 3. A port-only rule as the fallback guess.
+    private var chip: (label: String, colorName: String)? {
+        let rule = settings.rule(for: port)
+        if let rule, !rule.processHint.isEmpty {
+            return (rule.label, rule.colorName)
+        }
+        if let tool = port.inferredTool {
+            return (tool.label, tool.colorName)
+        }
+        if let rule {
+            return (rule.label, rule.colorName)
+        }
+        return nil
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -59,14 +77,14 @@ struct PortRowView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let rule {
-                Text(rule.label)
+            if let chip {
+                Text(chip.label)
                     .font(.caption2.weight(.medium))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(RuleColor.color(named: rule.colorName).opacity(0.18),
+                    .background(RuleColor.color(named: chip.colorName).opacity(0.18),
                                 in: Capsule())
-                    .foregroundStyle(RuleColor.color(named: rule.colorName))
+                    .foregroundStyle(RuleColor.color(named: chip.colorName))
             }
 
             bindScopeBadge
@@ -116,6 +134,16 @@ struct PortRowView: View {
             }
             if settings.showUptime, let start = port.processStartDate {
                 Text("up \(Formatting.uptime(since: start))")
+            }
+            if let project = port.projectName {
+                // Which of the five "node"s is this? The working directory
+                // answers with the project's name.
+                HStack(spacing: 2) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 9))
+                    Text(project)
+                }
+                .accessibilityLabel("Project \(project)")
             }
             Text(port.bindAddress)
             if settings.showPath, let path = port.executablePath {
@@ -193,7 +221,7 @@ struct PortRowView: View {
             viewModel.copyToPasteboard(String(port.pid))
         }
         Button("Copy Command") {
-            viewModel.copyToPasteboard(port.executablePath ?? port.processName)
+            viewModel.copyToPasteboard(port.commandLine ?? port.executablePath ?? port.processName)
         }
         Divider()
         if port.likelyServesHTTP {
@@ -219,7 +247,8 @@ struct PortRowView: View {
             port.processName,
             "PID \(port.pid)",
         ]
-        if let rule { parts.append(rule.label) }
+        if let chip { parts.append(chip.label) }
+        if let project = port.projectName { parts.append("project \(project)") }
         parts.append(port.isExposed ? "exposed to the network" : "loopback only")
         if isPinned { parts.append("pinned") }
         return parts.joined(separator: ", ")

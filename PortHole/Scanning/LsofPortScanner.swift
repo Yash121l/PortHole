@@ -28,19 +28,26 @@ actor LsofPortScanner: PortScanning {
         let records = LsofParser.records(from: tcp) + LsofParser.records(from: udp)
         var ports = LsofParser.listeningPorts(from: records)
 
-        // Enrich with executable path and start time via libproc (cheap
-        // kernel queries, no subprocess spawns). Cache per pid within a scan —
-        // one process usually owns several sockets.
+        // Enrich with executable path, start time, argv, and working
+        // directory via libproc/sysctl (cheap kernel queries, no subprocess
+        // spawns). Cache per pid within a scan — one process usually owns
+        // several sockets.
         var pathByPid: [Int32: String?] = [:]
         var startByPid: [Int32: Date?] = [:]
+        var argsByPid: [Int32: [String]?] = [:]
+        var cwdByPid: [Int32: String?] = [:]
         for index in ports.indices {
             let pid = ports[index].pid
             if pathByPid[pid] == nil {
                 pathByPid[pid] = ProcessInfoProvider.executablePath(pid: pid)
                 startByPid[pid] = ProcessInfoProvider.startDate(pid: pid)
+                argsByPid[pid] = ProcessInfoProvider.arguments(pid: pid)
+                cwdByPid[pid] = ProcessInfoProvider.workingDirectory(pid: pid)
             }
             ports[index].executablePath = pathByPid[pid] ?? nil
             ports[index].processStartDate = startByPid[pid] ?? nil
+            ports[index].arguments = argsByPid[pid] ?? nil
+            ports[index].workingDirectory = cwdByPid[pid] ?? nil
         }
         return ports
     }

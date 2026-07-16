@@ -50,9 +50,33 @@ struct ListeningPort: Identifiable, Hashable, Sendable {
     var executablePath: String?
     var user: String?
     var processStartDate: Date?
+    /// Real argv (KERN_PROCARGS2); nil for other users' processes.
+    var arguments: [String]? = nil
+    /// Current working directory — for dev servers, the project folder.
+    var workingDirectory: String? = nil
 
     var bindScope: BindScope { BindScope.classify(address: bindAddress) }
     var isExposed: Bool { bindScope.isExposed }
+
+    /// The full command line as launched, for the Copy Command action.
+    var commandLine: String? {
+        arguments?.joined(separator: " ")
+    }
+
+    /// What this process is actually running (Vite, Next.js dev, Django …),
+    /// inferred from its name and argv — independent of the port number.
+    var inferredTool: InferredTool? {
+        DevToolInference.infer(processName: processName, arguments: arguments)
+    }
+
+    /// Project-folder name derived from the working directory. Suppressed
+    /// for "/" (typical for GUI apps and daemons) and the home directory,
+    /// where the name would be noise rather than identity.
+    var projectName: String? {
+        guard let workingDirectory, workingDirectory.count > 1,
+              workingDirectory != NSHomeDirectory() else { return nil }
+        return URL(fileURLWithPath: workingDirectory).lastPathComponent
+    }
 
     /// Stable identity of a socket across scans: the same protocol + address +
     /// port owned by the same pid is "the same row". Used for diffing and for
