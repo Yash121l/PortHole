@@ -4,17 +4,10 @@ import SwiftUI
 struct PortHoleApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    @State private var viewModel: PortListViewModel
-
     private var settings: SettingsStore { SettingsStore.shared }
-
-    init() {
-        _viewModel = State(initialValue: PortListViewModel(
-            scanner: LsofPortScanner(),
-            terminator: ProcessController(),
-            settings: SettingsStore.shared
-        ))
-    }
+    /// Owned by the app delegate so the MenuBarExtra panel, the Settings
+    /// window, and the global-hotkey panel all drive one instance.
+    private var viewModel: PortListViewModel { appDelegate.viewModel }
 
     var body: some Scene {
         MenuBarExtra {
