@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import os.log
 
 /// Drives the menu-bar panel. Owns scan scheduling, filtering/sorting, and the
 /// kill flow; views stay declarative and observe this object.
@@ -74,6 +75,9 @@ final class PortListViewModel {
     private let scanner: any PortScanning
     private let terminator: any ProcessTerminating
     let settings: SettingsStore
+    /// Audit trail for the kill flow — an app whose job is signalling other
+    /// processes should leave a record of what it signalled and why.
+    private let log = Logger(subsystem: "io.github.yash121l.PortHole", category: "kill")
 
     init(scanner: any PortScanning, terminator: any ProcessTerminating, settings: SettingsStore) {
         self.scanner = scanner
@@ -179,6 +183,11 @@ final class PortListViewModel {
                 let scannedIDs = Set(scanned.map(\.id))
                 firstSeen = firstSeen.filter { scannedIDs.contains($0.key) }
                 survivedSigterm = survivedSigterm.intersection(scannedIDs)
+                // If the process being confirmed died on its own, retract the
+                // dialog instead of offering a kill against a recycled PID.
+                if let pending = pendingKill, !scannedIDs.contains(pending.id) {
+                    pendingKill = nil
+                }
                 if !diff.added.isEmpty || !diff.removed.isEmpty {
                     // Same transaction as the ports write → the list animates
                     // exactly this change and nothing else.
@@ -213,6 +222,9 @@ final class PortListViewModel {
     /// background cadence if the menu-bar badge/notifications need data).
     func panelDisappeared() {
         panelIsOpen = false
+        // Don't let a confirmation outlive the panel: by the time it reopens
+        // the PID may belong to a different process.
+        pendingKill = nil
         rescheduleRefreshLoop()
     }
 
@@ -247,6 +259,7 @@ final class PortListViewModel {
     /// Entry point for every kill gesture. Routes through the confirmation
     /// dialog when the user has confirmation enabled.
     func requestKill(_ port: ListeningPort) {
+        log.info("kill requested: \(port.processName, privacy: .public) pid \(port.pid) port \(port.port) (confirm=\(self.settings.confirmBeforeKill))")
         if settings.confirmBeforeKill {
             pendingKill = port
         } else {
@@ -256,6 +269,7 @@ final class PortListViewModel {
 
     func confirmPendingKill() {
         guard let port = pendingKill else { return }
+        log.info("kill confirmed: \(port.processName, privacy: .public) pid \(port.pid)")
         pendingKill = nil
         Task { await kill(port) }
     }
@@ -268,6 +282,7 @@ final class PortListViewModel {
                 gracePeriod: settings.killGracePeriod,
                 escalateToSigkill: settings.autoEscalateToSigkill
             )
+            log.info("terminate finished: \(port.processName, privacy: .public) pid \(port.pid) outcome=\(String(describing: outcome), privacy: .public)")
             if outcome == .stillRunning {
                 survivedSigterm.insert(port.id)
                 killMessage = settings.autoEscalateToSigkill
@@ -276,13 +291,16 @@ final class PortListViewModel {
             }
         } catch TerminationError.processNotFound {
             // Already gone; the refresh below drops the row.
+            log.info("terminate skipped: pid \(port.pid) already exited")
         } catch {
+            log.error("terminate failed: pid \(port.pid) — \(error.localizedDescription, privacy: .public)")
             killMessage = error.localizedDescription
         }
         await refresh()
     }
 
     func forceKill(_ port: ListeningPort) async {
+        log.info("force kill: \(port.processName, privacy: .public) pid \(port.pid)")
         do {
             _ = try await terminator.forceKill(pid: port.pid, processName: port.processName)
             survivedSigterm.remove(port.id)
@@ -292,6 +310,15 @@ final class PortListViewModel {
             killMessage = error.localizedDescription
         }
         await refresh()
+    }
+
+    /// Resets every way rows can be hidden (search, protocol chips, exposed
+    /// toggle) — the "Clear Filters" escape hatch in the no-matches state.
+    func clearFilters() {
+        searchText = ""
+        showTCP = true
+        showUDP = true
+        exposedOnly = false
     }
 
     // MARK: - Row actions

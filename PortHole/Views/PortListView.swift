@@ -12,15 +12,68 @@ struct PortListView: View {
     @Bindable var settings: SettingsStore
 
     var body: some View {
-        VStack(spacing: 0) {
-            PanelHeaderView(viewModel: viewModel)
-            PanelSearchField(viewModel: viewModel)
-            Divider()
-            PanelFilterBar(viewModel: viewModel)
-            Divider()
-            PanelContentView(viewModel: viewModel, settings: settings)
-            Divider()
-            PanelFooterView(viewModel: viewModel)
+        ZStack {
+            VStack(spacing: 0) {
+                PanelHeaderView(viewModel: viewModel)
+                PanelSearchField(viewModel: viewModel)
+                Divider()
+                PanelFilterBar(viewModel: viewModel)
+                Divider()
+                PanelContentView(viewModel: viewModel, settings: settings)
+                Divider()
+                PanelFooterView(viewModel: viewModel)
+            }
+            // Freeze the content while a dialog is up: blocks clicks and keeps
+            // the list's ⏎/⌫ key handlers from stealing the dialog's shortcuts.
+            .disabled(dialogIsPresented)
+
+            // Confirm-before-kill (toggleable in Settings → General) and kill
+            // outcomes that need attention (EPERM, survived SIGTERM…). These
+            // are drawn in-panel instead of via .confirmationDialog/.alert:
+            // window-hosted presentations inside a MenuBarExtra window swallow
+            // their button actions — the click makes the panel resign key and
+            // close before SwiftUI delivers the action, so the kill never ran.
+            if let port = viewModel.pendingKill {
+                PanelDialogOverlay(
+                    title: "Kill \(port.processName)?",
+                    message: "This sends SIGTERM to \(port.processName), which is listening on port \(String(port.port)).",
+                    onDismiss: { viewModel.pendingKill = nil }
+                ) {
+                    Button {
+                        viewModel.confirmPendingKill()
+                    } label: {
+                        Text("Kill \(port.processName) (PID \(String(port.pid)))")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .keyboardShortcut(.defaultAction)
+
+                    Button {
+                        viewModel.pendingKill = nil
+                    } label: {
+                        Text("Cancel")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                }
+            } else if let message = viewModel.killMessage {
+                PanelDialogOverlay(
+                    title: "PortHole",
+                    message: message,
+                    onDismiss: { viewModel.killMessage = nil }
+                ) {
+                    Button {
+                        viewModel.killMessage = nil
+                    } label: {
+                        Text("OK")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
         }
         .frame(width: 400, height: 500)
         .onAppear { viewModel.panelAppeared() }
@@ -28,36 +81,54 @@ struct PortListView: View {
         .onChange(of: settings.refreshInterval) {
             viewModel.rescheduleRefreshLoop()
         }
-        // Confirm-before-kill (toggleable in Settings → General).
-        .confirmationDialog(
-            "Kill \(viewModel.pendingKill?.processName ?? "process")?",
-            isPresented: Binding(
-                get: { viewModel.pendingKill != nil },
-                set: { if !$0 { viewModel.pendingKill = nil } }
-            ),
-            presenting: viewModel.pendingKill
-        ) { port in
-            Button("Kill \(port.processName) (PID \(port.pid))", role: .destructive) {
-                viewModel.confirmPendingKill()
+    }
+
+    private var dialogIsPresented: Bool {
+        viewModel.pendingKill != nil || viewModel.killMessage != nil
+    }
+}
+
+// MARK: - In-panel dialog
+
+/// Alert-style card drawn inside the panel's own window. Same-window rendering
+/// is what makes the buttons reliable here (see the note at the use site);
+/// clicking the dimmed backdrop or pressing Esc dismisses.
+private struct PanelDialogOverlay<Actions: View>: View {
+    let title: String
+    let message: String
+    var onDismiss: () -> Void
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.black.opacity(0.3))
+                .onTapGesture(perform: onDismiss)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 6) {
+                    actions
+                }
+                .controlSize(.large)
+                .padding(.top, 6)
             }
-            Button("Cancel", role: .cancel) {
-                viewModel.pendingKill = nil
-            }
-        } message: { port in
-            Text("This sends SIGTERM to \(port.processName), which is listening on port \(port.port).")
+            .padding(16)
+            .frame(width: 300)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
+            .shadow(color: .black.opacity(0.3), radius: 24, y: 10)
+            .accessibilityAddTraits(.isModal)
         }
-        // Kill outcomes that need the user's attention (EPERM, survived SIGTERM…).
-        .alert(
-            "PortHole",
-            isPresented: Binding(
-                get: { viewModel.killMessage != nil },
-                set: { if !$0 { viewModel.killMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { viewModel.killMessage = nil }
-        } message: {
-            Text(viewModel.killMessage ?? "")
-        }
+        .onExitCommand(perform: onDismiss)
     }
 }
 
@@ -66,12 +137,23 @@ struct PortListView: View {
 private struct PanelHeaderView: View {
     @Bindable var viewModel: PortListViewModel
 
+    /// "8 of 28 ports" whenever filtering hides rows — a filtered-down list
+    /// must never read as an empty or broken scan.
+    private var countText: String {
+        let shown = viewModel.filteredPorts.count
+        let total = viewModel.portCount
+        if shown == total {
+            return "\(shown) \(shown == 1 ? "port" : "ports")"
+        }
+        return "\(shown) of \(total) ports"
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Text("\(viewModel.filteredPorts.count) \(viewModel.filteredPorts.count == 1 ? "port" : "ports")")
+            Text(countText)
                 .font(.headline)
                 .contentTransition(.numericText())
-                .accessibilityLabel("\(viewModel.filteredPorts.count) listening ports")
+                .accessibilityLabel("\(viewModel.filteredPorts.count) of \(viewModel.portCount) listening ports shown")
 
             // Always present (opacity-toggled) so the header never reflows
             // when a user-initiated scan starts.
@@ -212,10 +294,33 @@ private struct PanelContentView: View {
                     Text("Nothing is listening for connections right now.")
                 }
             } else {
-                ContentUnavailableView.search(text: viewModel.searchText)
+                noMatchesView
             }
         } else {
             list
+        }
+    }
+
+    /// Empty state for "ports exist, but the filter hides them all". The
+    /// stock `.search` copy ("Check the spelling…") is wrong for a port
+    /// scanner — for a numeric query the honest answer is that nothing is
+    /// listening there.
+    private var noMatchesView: some View {
+        let query = viewModel.searchText.trimmingCharacters(in: .whitespaces)
+        return ContentUnavailableView {
+            Label("No Matches", systemImage: "magnifyingglass")
+        } description: {
+            if query.isEmpty {
+                Text("No ports match the current filters.")
+            } else if let portNumber = Int(query), (0...65535).contains(portNumber) {
+                Text("Nothing is listening on port \(String(portNumber)).")
+            } else {
+                Text("No port, process, or PID matches “\(query)”.")
+            }
+        } actions: {
+            Button("Clear Filters") {
+                viewModel.clearFilters()
+            }
         }
     }
 
