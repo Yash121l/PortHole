@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Analytics.start()
         // Info.plist ships LSUIElement = YES (menu-bar-only agent). The user
         // can opt into a Dock icon in Settings; apply their choice at launch.
         NSApp.setActivationPolicy(SettingsStore.shared.showDockIcon ? .regular : .accessory)
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let panel, panel.isVisible {
             panel.orderOut(nil)
         } else {
+            Analytics.capture("hotkey_panel_opened")
             showPanel()
         }
     }
