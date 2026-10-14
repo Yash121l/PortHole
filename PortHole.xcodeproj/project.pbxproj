@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CC0000000000000000000F03 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = CC0000000000000000000F02 /* PostHog */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		AA0000000000000000000070 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -47,6 +51,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC0000000000000000000F03 /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,6 +103,7 @@
 			);
 			name = PortHole;
 			packageProductDependencies = (
+				CC0000000000000000000F02 /* PostHog */,
 			);
 			productName = PortHole;
 			productReference = AA0000000000000000000001 /* PortHole.app */;
@@ -151,6 +157,9 @@
 			knownRegions = (
 				en,
 				Base,
+			);
+			packageReferences = (
+				CC0000000000000000000F01 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			mainGroup = AA0000000000000000000020;
 			minimizedProjectReferenceProxies = 1;
@@ -450,6 +459,24 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+/* Begin XCRemoteSwiftPackageReference section */
+		CC0000000000000000000F01 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.92.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CC0000000000000000000F02 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CC0000000000000000000F01 /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA0000000000000000000040 /* Project object */;
 }

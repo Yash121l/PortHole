@@ -61,6 +61,10 @@ The app appears in the menu bar (no Dock icon). Click the icon to open the panel
 
 The scanner sits behind the `PortScanning` protocol specifically so a future sandbox-permissible implementation (`libproc`-based) can replace the `lsof` one without touching the UI.
 
+## Analytics
+
+Release builds send anonymous usage analytics to PostHog: panel opens, kill outcomes, browser opens, the inferred tool label ("Vite", "Postgres"), port number, and crash reports. Process names, command lines, paths, project folders and user names are never sent. Debug builds send nothing. Turn it off in Settings → General → "Share anonymous usage analytics".
+
 ## Distribution & sandbox constraints
 
 **This app cannot ship to the Mac App Store in its current form.** It shells out to `/usr/sbin/lsof` (system-provided) and sends signals to arbitrary processes — both incompatible with the App Sandbox. The intended distribution is:

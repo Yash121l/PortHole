@@ -46,6 +46,7 @@ struct GeneralSettingsTab: View {
     @Bindable var settings: SettingsStore
 
     @State private var launchAtLogin = false
+    @State private var shareAnalytics = Analytics.isEnabled
     @State private var launchAtLoginError: String?
     @State private var didLoadLoginState = false
 
@@ -82,6 +83,14 @@ struct GeneralSettingsTab: View {
             Section("App") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
                 Toggle("Show Dock icon", isOn: $settings.showDockIcon)
+            }
+
+            Section {
+                Toggle("Share anonymous usage analytics", isOn: $shareAnalytics)
+                    .onChange(of: shareAnalytics) { _, on in Analytics.setEnabled(on) }
+            } footer: {
+                Text("Counts of panel opens and kills, the inferred tool (\"Vite\", \"Postgres\"), and crash reports, sent to PostHog. Never process names, command lines, paths or project folders.")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

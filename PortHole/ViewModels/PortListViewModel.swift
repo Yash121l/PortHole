@@ -214,7 +214,14 @@ final class PortListViewModel {
     /// the auto-refresh loop.
     func panelAppeared() {
         panelIsOpen = true
-        Task { await refresh(userInitiated: true) }
+        Task {
+            await refresh(userInitiated: true)
+            Analytics.capture("port_list_opened", [
+                "listening_count": ports.count,
+                "exposed_count": ports.filter(\.isExposed).count,
+                "refresh_interval_s": settings.refreshInterval.seconds,
+            ])
+        }
         rescheduleRefreshLoop()
     }
 
@@ -283,6 +290,12 @@ final class PortListViewModel {
                 escalateToSigkill: settings.autoEscalateToSigkill
             )
             log.info("terminate finished: \(port.processName, privacy: .public) pid \(port.pid) outcome=\(String(describing: outcome), privacy: .public)")
+            let outcomeName: String = switch outcome {
+                case .terminated: "terminated"
+                case .forceKilled: "force_killed"
+                case .stillRunning: "still_running"
+            }
+            trackKill(port, outcome: outcomeName)
             if outcome == .stillRunning {
                 survivedSigterm.insert(port.id)
                 killMessage = settings.autoEscalateToSigkill
@@ -292,8 +305,10 @@ final class PortListViewModel {
         } catch TerminationError.processNotFound {
             // Already gone; the refresh below drops the row.
             log.info("terminate skipped: pid \(port.pid) already exited")
+            trackKill(port, outcome: "already_exited")
         } catch {
             log.error("terminate failed: pid \(port.pid) — \(error.localizedDescription, privacy: .public)")
+            trackKill(port, outcome: Self.failureKind(error))
             killMessage = error.localizedDescription
         }
         await refresh()
@@ -304,12 +319,29 @@ final class PortListViewModel {
         do {
             _ = try await terminator.forceKill(pid: port.pid, processName: port.processName)
             survivedSigterm.remove(port.id)
+            trackKill(port, outcome: "force_killed", forced: true)
         } catch TerminationError.processNotFound {
             survivedSigterm.remove(port.id)
+            trackKill(port, outcome: "already_exited", forced: true)
         } catch {
             killMessage = error.localizedDescription
+            trackKill(port, outcome: Self.failureKind(error), forced: true)
         }
         await refresh()
+    }
+
+    private func trackKill(_ port: ListeningPort, outcome: String, forced: Bool = false) {
+        var props = Analytics.props(for: port)
+        props["outcome"] = outcome
+        props["forced"] = forced
+        props["confirm_enabled"] = settings.confirmBeforeKill
+        props["auto_escalate"] = settings.autoEscalateToSigkill
+        Analytics.capture("process_killed", props)
+    }
+
+    private static func failureKind(_ error: Error) -> String {
+        if case TerminationError.permissionDenied = error { return "permission_denied" }
+        return "failed"
     }
 
     /// Resets every way rows can be hidden (search, protocol chips, exposed
@@ -330,6 +362,7 @@ final class PortListViewModel {
 
     func openInBrowser(_ port: ListeningPort) {
         guard let url = port.localURL else { return }
+        Analytics.capture("port_opened_in_browser", Analytics.props(for: port))
         NSWorkspace.shared.open(url)
     }
 
